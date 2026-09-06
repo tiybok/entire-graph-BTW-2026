@@ -378,6 +378,25 @@ var commandDocs = []commandDoc{
 		},
 	},
 	{
+		name:    "audit",
+		group:   groupAnalyze,
+		summary: "Structural verification audit & Zero-Evidence Green Test Detector",
+		usage:   []string{`entire graph audit [--base <ref>] [--test "<cmd>"] [--repo .] [--json]`},
+		long: "audit reconciles AST modifications against structural test evidence (*_test.go) and test execution results. It identifies whether tests that pass actually call the modified functions or methods.\n\n" +
+			"When a test command passes with exit code 0 but modified entities in the Audited Structural Surface have no structural Go test callers, audit triggers the ZERO-EVIDENCE GREEN TEST DETECTOR and marks REVIEW REQUIRED. A failing test command yields BLOCKED. Only when all affected entities possess structural test evidence and tests pass does it report STRUCTURAL CHECKS SATISFIED.",
+		flags: []flagDoc{
+			{name: "--base", arg: "ref", def: "HEAD~1", desc: "Base Git ref to compare against"},
+			{name: "--test", arg: "cmd", desc: "Test command to execute and adjudicate (e.g. \"go test ./...\")"},
+			{name: "--repo", arg: "path", desc: "Repository to inspect (default: current repo)"},
+			{name: "--json", desc: "Emit output as structured JSON"},
+			{name: "--max-bytes", arg: "n", def: "4096", desc: "Cap rendered text output size"},
+		},
+		examples: []string{
+			`entire graph audit --base origin/main --test "go test ./..."`,
+			`entire graph audit --base main --json`,
+		},
+	},
+	{
 		name:    "stats",
 		group:   groupAnalyze,
 		summary: "Estimated tokens the graph saved (one line; --verbose for the full report)",

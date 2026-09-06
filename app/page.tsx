@@ -11,6 +11,7 @@ import {
   FileCode,
   ArrowRight,
   ShieldCheck,
+  ShieldAlert,
   Zap,
   CheckCircle2,
   Copy,
@@ -18,6 +19,8 @@ import {
   Layers,
   Code2,
   Cpu,
+  Info,
+  XCircle,
 } from "lucide-react";
 import {
   INITIAL_SYMBOLS,
@@ -25,9 +28,11 @@ import {
   RECENT_DIFFS,
   MOCK_STATS,
   SymbolNode,
+  AUDIT_SCENARIOS,
+  AuditReport,
 } from "@/lib/data";
 
-type TabType = "search" | "neighbors" | "impact" | "diff" | "benchmarks" | "cli";
+type TabType = "search" | "neighbors" | "impact" | "diff" | "audit" | "benchmarks" | "cli";
 
 export default function EntireGraphApp() {
   const [activeTab, setActiveTab] = useState<TabType>("search");
@@ -56,6 +61,30 @@ export default function EntireGraphApp() {
 
   // Diff Filter
   const [diffRiskFilter, setDiffRiskFilter] = useState("all");
+
+  // Audit State (Track 2: Build with Graph Intelligence)
+  const [selectedScenarioKey, setSelectedScenarioKey] = useState<string>("zero_evidence_green");
+  const [auditBaseRef, setAuditBaseRef] = useState<string>("origin/main");
+  const [auditTestCmd, setAuditTestCmd] = useState<string>("go test ./...");
+  const [auditReport, setAuditReport] = useState<AuditReport>(AUDIT_SCENARIOS.zero_evidence_green);
+  const [isAuditing, setIsAuditing] = useState(false);
+
+  const runAuditAnalysis = async (scenario = selectedScenarioKey, base = auditBaseRef, test = auditTestCmd) => {
+    setIsAuditing(true);
+    try {
+      const res = await fetch("/api/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario, base, test }),
+      });
+      const data = await res.json();
+      setAuditReport(data);
+    } catch (e) {
+      console.error("Audit query failed:", e);
+    } finally {
+      setIsAuditing(false);
+    }
+  };
 
   // Perform search
   const executeSearch = async (query: string, lang = selectedLanguage, kind = selectedKind) => {
@@ -142,6 +171,31 @@ CO-CHANGING FILES (historical 30d):
   - internal/sem/analyze.go
   - internal/sem/analyze_test.go
   - internal/cli/root.go`);
+    } else if (cmd.includes("audit")) {
+      setCliOutput(`AUDIT VERDICT: REVIEW REQUIRED
+Reason: Zero-Evidence Green Test Detected: The test command succeeded (exit code 0), but 1 entity in the Audited Structural Surface has no structural Go test evidence.
+
+================================================================================
+⚠ ZERO-EVIDENCE GREEN TEST DETECTED
+The test suite passed with exit code 0, but affected AST entities lack
+structural Go test callers. Do not accept this change as verified.
+================================================================================
+
+AUDITED STRUCTURAL SURFACE (3 entities):
+  ✗ [UNVERIFIED] ParseHeader (internal/parser/header.go:48)
+  ✗ [UNVERIFIED] HeaderOptions (internal/parser/header.go:22)
+  ✓ [TESTED] SendWithHeader (internal/parser/client.go:114) <- TestSendWithHeader
+
+VERIFICATION GAPS (1 gaps):
+  - ParseHeader (internal/parser/header.go:48): No structural Go test in *_test.go invokes or references ParseHeader.
+    Suggested action: Author a unit test TestParseHeader in internal/parser/header_test.go establishing a direct CALLS edge.
+
+TEST EXECUTION:
+  Command: go test ./...
+  Exit status: 0
+
+DISCLAIMER:
+  STRUCTURAL CHECKS SATISFIED explicitly does NOT denote runtime coverage, runtime safety, or semantic correctness.`);
     } else {
       setCliOutput(`[entire-graph 0.4.0] command executed successfully.`);
     }
@@ -242,6 +296,24 @@ CO-CHANGING FILES (historical 30d):
           >
             <GitCompare className="w-3.5 h-3.5 text-purple-400" />
             <span>Entity Diff & Dependents</span>
+          </button>
+
+          <button
+            id="tab-audit"
+            onClick={() => setActiveTab("audit")}
+            className={`px-3 py-2 rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+              activeTab === "audit"
+                ? "bg-neutral-800 text-white font-semibold shadow-sm border border-neutral-700"
+                : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/50"
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span className="flex items-center gap-1.5">
+              <span>GraphAudit</span>
+              <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                Track 2
+              </span>
+            </span>
           </button>
 
           <button
@@ -877,6 +949,388 @@ CO-CHANGING FILES (historical 30d):
           </div>
         )}
 
+        {/* TAB: GRAPHAUDIT (TRACK 2: BUILD WITH GRAPH INTELLIGENCE) */}
+        {activeTab === "audit" && (
+          <div className="space-y-6">
+            {/* Header / Intro Card */}
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-6 space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono font-semibold border border-amber-500/30 uppercase tracking-wide">
+                      Track 2: Build with Graph Intelligence
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 font-mono">
+                      Pre-Merge Decision Engine
+                    </span>
+                  </div>
+                  <h2 className="text-xl font-bold text-white mt-2">
+                    GraphAudit: Structural Verification Audit
+                  </h2>
+                  <p className="text-xs text-neutral-400 mt-1 max-w-3xl leading-relaxed">
+                    Reconciles AST modifications against structural test evidence in <code className="text-emerald-400">*_test.go</code> and explicit test execution.
+                    Prevents premature merges by catching passing tests that fail to execute modified code.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="text-right hidden sm:block">
+                    <div className="text-xs text-neutral-400 font-mono">Status Contract</div>
+                    <div className="text-xs text-emerald-400 font-semibold">Strict Terminology Enforced</div>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <ShieldCheck className="w-6 h-6" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Scenario Preset Selector */}
+              <div className="pt-2 border-t border-neutral-800/80 space-y-2">
+                <div className="text-xs font-semibold text-neutral-300 flex items-center gap-1.5">
+                  <FileCode className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Acceptance Test Scenarios (from docs/TEST_PLAN.md):</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
+                  {Object.entries(AUDIT_SCENARIOS).map(([key, s]) => (
+                    <button
+                      key={key}
+                      id={`scenario-${key}`}
+                      onClick={() => {
+                        setSelectedScenarioKey(key);
+                        setAuditBaseRef(s.baseRef);
+                        setAuditTestCmd(s.testCommand || "");
+                        runAuditAnalysis(key, s.baseRef, s.testCommand);
+                      }}
+                      className={`p-2.5 rounded-lg border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                        selectedScenarioKey === key
+                          ? "bg-neutral-800 border-emerald-500/60 shadow-sm"
+                          : "bg-neutral-950/60 border-neutral-800 hover:border-neutral-700 text-neutral-400"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-neutral-200 truncate">{s.scenarioTitle.split(":")[0]}</span>
+                        <span
+                          className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold uppercase ${
+                            s.verdict === "STRUCTURAL CHECKS SATISFIED"
+                              ? "bg-emerald-950 text-emerald-300 border border-emerald-800"
+                              : s.verdict === "BLOCKED"
+                              ? "bg-rose-950 text-rose-300 border border-rose-800"
+                              : "bg-amber-950 text-amber-300 border border-amber-800"
+                          }`}
+                        >
+                          {s.verdict === "STRUCTURAL CHECKS SATISFIED" ? "Satisfied" : s.verdict}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 line-clamp-2 leading-tight">
+                        {s.scenarioDescription}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Interactive Audit Input Form */}
+              <div className="pt-3 border-t border-neutral-800/80 flex flex-col sm:flex-row gap-3">
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-neutral-400 font-mono">Base Git Ref (--base):</label>
+                  <input
+                    id="input-audit-base"
+                    type="text"
+                    value={auditBaseRef}
+                    onChange={(e) => setAuditBaseRef(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono text-neutral-100 focus:outline-none focus:border-emerald-500"
+                    placeholder="origin/main or HEAD~1"
+                  />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <label className="text-xs text-neutral-400 font-mono">Test Command (--test):</label>
+                  <input
+                    id="input-audit-test"
+                    type="text"
+                    value={auditTestCmd}
+                    onChange={(e) => setAuditTestCmd(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded-lg px-3 py-2 text-xs font-mono text-neutral-100 focus:outline-none focus:border-emerald-500"
+                    placeholder="e.g. go test ./..."
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    id="btn-run-audit"
+                    onClick={() => runAuditAnalysis(selectedScenarioKey, auditBaseRef, auditTestCmd)}
+                    disabled={isAuditing}
+                    className="w-full sm:w-auto px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 whitespace-nowrap shadow-sm disabled:opacity-50"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>{isAuditing ? "Auditing Graph..." : "Execute Audit"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* AUDIT RESULTS SECTION */}
+            {auditReport && (
+              <div className="space-y-6">
+                {/* VERDICT HERO CARD */}
+                <div
+                  className={`border rounded-xl p-6 relative overflow-hidden transition-all ${
+                    auditReport.verdict === "STRUCTURAL CHECKS SATISFIED"
+                      ? "bg-emerald-950/20 border-emerald-500/40"
+                      : auditReport.verdict === "BLOCKED"
+                      ? "bg-rose-950/20 border-rose-500/40"
+                      : "bg-amber-950/20 border-amber-500/40"
+                  }`}
+                >
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
+                        <span>AUDIT DECISION VERDICT:</span>
+                        <span className="text-neutral-500">•</span>
+                        <span>{auditReport.baseRef} ➔ {auditReport.headRef}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {auditReport.verdict === "STRUCTURAL CHECKS SATISFIED" ? (
+                          <div className="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
+                            <CheckCircle2 className="w-7 h-7" />
+                          </div>
+                        ) : auditReport.verdict === "BLOCKED" ? (
+                          <div className="p-2 rounded-lg bg-rose-500/20 text-rose-400">
+                            <XCircle className="w-7 h-7" />
+                          </div>
+                        ) : (
+                          <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400">
+                            <ShieldAlert className="w-7 h-7" />
+                          </div>
+                        )}
+
+                        <div>
+                          <div
+                            className={`text-2xl font-black tracking-tight font-mono ${
+                              auditReport.verdict === "STRUCTURAL CHECKS SATISFIED"
+                                ? "text-emerald-400"
+                                : auditReport.verdict === "BLOCKED"
+                                ? "text-rose-400"
+                                : "text-amber-400"
+                            }`}
+                          >
+                            {auditReport.verdict}
+                          </div>
+                          <p className="text-xs text-neutral-300 mt-0.5 max-w-2xl font-sans">
+                            {auditReport.verdictReason}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 text-xs font-mono border-t md:border-t-0 md:border-l border-neutral-800 pt-3 md:pt-0 md:pl-5">
+                      <div>
+                        <div className="text-neutral-500">Test Exit Code</div>
+                        <div className="text-white font-bold">
+                          {auditReport.testExitCode !== undefined ? auditReport.testExitCode : "None supplied"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-neutral-500">Execution Time</div>
+                        <div className="text-white font-bold">
+                          {auditReport.testExecutionTimeMs ? `${auditReport.testExecutionTimeMs}ms` : "N/A"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ZERO-EVIDENCE GREEN TEST DETECTOR BANNER */}
+                  {auditReport.zeroEvidenceGreenDetected && (
+                    <div className="mt-5 p-4 rounded-lg bg-amber-950/60 border border-amber-600/60 flex items-start gap-3 text-xs">
+                      <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <div className="font-bold text-amber-200 tracking-wide">
+                          ZERO-EVIDENCE GREEN TEST DETECTOR TRIGGERED
+                        </div>
+                        <p className="text-amber-300/90 leading-relaxed font-sans">
+                          The explicit test command completed successfully with exit code 0, but 1 or more modified AST entities
+                          have <strong>zero structural test linkages</strong> in <code className="text-amber-200">*_test.go</code>.
+                          This change has not been structurally exercised. Do not accept this change as verified.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4 METRIC CARDS */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5 space-y-1">
+                    <div className="text-neutral-400 font-mono">Changed AST Entities</div>
+                    <div className="text-lg font-bold text-white font-mono">
+                      {auditReport.auditedSurface.filter(e => e.relationshipToDiff === "DIRECT_MODIFICATION").length}
+                    </div>
+                    <div className="text-[11px] text-neutral-500">From semantic diff</div>
+                  </div>
+
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5 space-y-1">
+                    <div className="text-neutral-400 font-mono">Audited Surface</div>
+                    <div className="text-lg font-bold text-white font-mono">
+                      {auditReport.auditedSurface.length}
+                    </div>
+                    <div className="text-[11px] text-neutral-500">Callers, types & siblings</div>
+                  </div>
+
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5 space-y-1">
+                    <div className="text-neutral-400 font-mono">Verified Test Callers</div>
+                    <div className="text-lg font-bold text-emerald-400 font-mono">
+                      {auditReport.auditedSurface.filter((e) => e.hasStructuralTestEvidence).length}
+                    </div>
+                    <div className="text-[11px] text-neutral-500">In *_test.go call graph</div>
+                  </div>
+
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3.5 space-y-1">
+                    <div className="text-neutral-400 font-mono">Verification Gaps</div>
+                    <div className={`text-lg font-bold font-mono ${auditReport.verificationGaps.length > 0 ? "text-amber-400" : "text-emerald-400"}`}>
+                      {auditReport.verificationGaps.length}
+                    </div>
+                    <div className="text-[11px] text-neutral-500">Unverified surface items</div>
+                  </div>
+                </div>
+
+                {/* SECTION 1: VERIFICATION GAPS */}
+                {auditReport.verificationGaps.length > 0 && (
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-sm text-neutral-200 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <span>Verification Gaps ({auditReport.verificationGaps.length})</span>
+                      </h3>
+                      <span className="text-xs text-neutral-500 font-mono">Unverified Structural Surface</span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {auditReport.verificationGaps.map((gap, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-neutral-950 border border-amber-900/40 rounded-lg p-3.5 space-y-2 text-xs"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-neutral-800 pb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-white text-sm">{gap.name}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 font-mono">
+                                {gap.kind}
+                              </span>
+                            </div>
+                            <span className="font-mono text-neutral-500 text-[11px]">
+                              {gap.path}:{gap.line}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 text-neutral-300 leading-relaxed font-sans">
+                            <p className="text-amber-300/90 font-medium">{gap.gapReason}</p>
+                            <p className="text-neutral-400">
+                              <strong className="text-neutral-200">Recommended action:</strong> {gap.suggestedAction}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* SECTION 2: AUDITED STRUCTURAL SURFACE */}
+                <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-semibold text-sm text-neutral-200 flex items-center gap-2">
+                      <Network className="w-4 h-4 text-blue-400" />
+                      <span>Audited Structural Surface ({auditReport.auditedSurface.length} entities)</span>
+                    </h3>
+                    <span className="text-xs text-neutral-500 font-mono">AST Entities & Test Linkages</span>
+                  </div>
+
+                  <div className="divide-y divide-neutral-800 font-mono text-xs">
+                    {auditReport.auditedSurface.map((ent, idx) => (
+                      <div key={idx} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            {ent.hasStructuralTestEvidence ? (
+                              <span className="text-emerald-400 font-bold">✓ [TESTED]</span>
+                            ) : (
+                              <span className="text-amber-400 font-bold">✗ [UNVERIFIED]</span>
+                            )}
+                            <span className="font-bold text-white">{ent.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400">
+                              {ent.kind}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800/80 text-neutral-500">
+                              {ent.relationshipToDiff}
+                            </span>
+                          </div>
+                          <div className="text-neutral-500 text-[11px]">
+                            {ent.path}:{ent.line}
+                          </div>
+                        </div>
+
+                        <div className="text-right text-[11px]">
+                          {ent.hasStructuralTestEvidence && ent.testSymbolName ? (
+                            <div className="text-emerald-400 flex items-center gap-1.5 sm:justify-end">
+                              <span>caller:</span>
+                              <code className="text-emerald-300 font-semibold">{ent.testSymbolName}</code>
+                            </div>
+                          ) : (
+                            <div className="text-neutral-500">No test callers found</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SECTION 3: TEST EXECUTION & DIAGNOSTICS */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 space-y-2">
+                    <h4 className="font-semibold text-neutral-200 flex items-center gap-2">
+                      <Terminal className="w-3.5 h-3.5 text-neutral-400" />
+                      <span>Test Execution Details</span>
+                    </h4>
+                    <div className="font-mono space-y-1 text-neutral-400">
+                      <div>Command: <code className="text-neutral-200">{auditReport.testCommand || "None provided"}</code></div>
+                      <div>Exit Status: <code className="text-neutral-200">{auditReport.testExitCode !== undefined ? auditReport.testExitCode : "N/A"}</code></div>
+                      <div>Duration: <code className="text-neutral-200">{auditReport.testExecutionTimeMs ? `${auditReport.testExecutionTimeMs}ms` : "N/A"}</code></div>
+                    </div>
+                  </div>
+
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 space-y-2">
+                    <h4 className="font-semibold text-neutral-200 flex items-center gap-2">
+                      <Code2 className="w-3.5 h-3.5 text-neutral-400" />
+                      <span>Evidence Completeness Status</span>
+                    </h4>
+                    <div className="space-y-1">
+                      <div className="font-mono text-neutral-400">
+                        Status: <span className="text-emerald-400 font-bold">{auditReport.completenessStatus}</span>
+                      </div>
+                      {auditReport.diagnostics.length > 0 ? (
+                        <div className="space-y-1 pt-1 font-mono text-[11px] text-amber-400">
+                          {auditReport.diagnostics.map((diag, i) => (
+                            <div key={i}>• {diag}</div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-neutral-500 text-[11px]">0 parser warnings or unindexed partial failures</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* MANDATORY DISCLAIMER */}
+                <div className="p-4 rounded-xl bg-neutral-900 border border-neutral-800 text-xs space-y-1.5">
+                  <div className="flex items-center gap-2 text-neutral-400 font-mono text-[11px] uppercase tracking-wider">
+                    <Info className="w-3.5 h-3.5 text-neutral-400" />
+                    <span>Audit Terminology & Scope Boundary</span>
+                  </div>
+                  <p className="text-neutral-400 leading-relaxed font-sans text-[11px]">
+                    {auditReport.disclaimer}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* TAB 5: LOCOMO BENCHMARKS */}
         {activeTab === "benchmarks" && (
           <div className="space-y-6">
@@ -982,6 +1436,7 @@ CO-CHANGING FILES (historical 30d):
                   "entire graph search --query 'token' --format text --top-k 5",
                   "entire graph neighbors --symbol generateToken --direction both",
                   "entire graph impact --symbol AnalyzeGitRangeWithOptions --depth 2",
+                  "entire graph audit --base origin/main --test 'go test ./...'",
                   "entire graph capabilities --json",
                 ].map((cmd) => (
                   <button

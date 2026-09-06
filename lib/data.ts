@@ -482,3 +482,303 @@ export const MOCK_STATS = {
   medianLookupTimeMs: 14.2,
   cacheHitRatio: "96.5%"
 };
+
+export type AuditVerdict = "BLOCKED" | "REVIEW REQUIRED" | "STRUCTURAL CHECKS SATISFIED";
+
+export interface AuditedSurfaceEntity {
+  symbolId: string;
+  name: string;
+  kind: string;
+  path: string;
+  line: number;
+  relationshipToDiff: "DIRECT_MODIFICATION" | "TRANSITIVE_CALLER" | "TRANSITIVE_CALLEE" | "TYPE_CONSUMER";
+  hasStructuralTestEvidence: boolean;
+  testSymbolId?: string;
+  testSymbolName?: string;
+  testPath?: string;
+}
+
+export interface VerificationGap {
+  symbolId: string;
+  name: string;
+  kind: string;
+  path: string;
+  line: number;
+  gapReason: string;
+  reason?: string;
+  suggestedAction: string;
+}
+
+export interface AuditReport {
+  id: string;
+  scenarioKey: string;
+  scenarioTitle: string;
+  scenarioDescription: string;
+  baseRef: string;
+  headRef: string;
+  testCommand?: string;
+  testExitCode?: number;
+  testExecutionTimeMs?: number;
+  verdict: AuditVerdict;
+  verdictReason: string;
+  zeroEvidenceGreenDetected: boolean;
+  auditedSurface: AuditedSurfaceEntity[];
+  verificationGaps: VerificationGap[];
+  completenessStatus: "COMPLETE" | "DEGRADED" | "WARNINGS";
+  diagnostics: string[];
+  disclaimer: string;
+}
+
+export const AUDIT_SCENARIOS: Record<string, AuditReport> = {
+  zero_evidence_green: {
+    id: "audit-scenario-b",
+    scenarioKey: "zero_evidence_green",
+    scenarioTitle: "Scenario B: Green Test Suite with Missing Structural Evidence (Zero-Evidence Detector)",
+    scenarioDescription: "A modified Go AST function ParseHeader passes blanket 'go test ./...' (exit code 0), but no test in *_test.go has a static CALLS relation to ParseHeader.",
+    baseRef: "origin/main",
+    headRef: "HEAD",
+    testCommand: "go test ./...",
+    testExitCode: 0,
+    testExecutionTimeMs: 1420,
+    verdict: "REVIEW REQUIRED",
+    verdictReason: "Zero-Evidence Green Test Detected: The test command succeeded (exit code 0), but 1 modified entity in the Audited Structural Surface has no structural Go test evidence.",
+    zeroEvidenceGreenDetected: true,
+    auditedSurface: [
+      {
+        symbolId: "internal/parser/header.go::ParseHeader",
+        name: "ParseHeader",
+        kind: "function",
+        path: "internal/parser/header.go",
+        line: 48,
+        relationshipToDiff: "DIRECT_MODIFICATION",
+        hasStructuralTestEvidence: false,
+      },
+      {
+        symbolId: "internal/parser/header.go::HeaderOptions",
+        name: "HeaderOptions",
+        kind: "struct",
+        path: "internal/parser/header.go",
+        line: 22,
+        relationshipToDiff: "TYPE_CONSUMER",
+        hasStructuralTestEvidence: false,
+      },
+      {
+        symbolId: "internal/parser/client.go::SendWithHeader",
+        name: "SendWithHeader",
+        kind: "method",
+        path: "internal/parser/client.go",
+        line: 114,
+        relationshipToDiff: "TRANSITIVE_CALLER",
+        hasStructuralTestEvidence: true,
+        testSymbolId: "internal/parser/client_test.go::TestSendWithHeader",
+        testSymbolName: "TestSendWithHeader",
+        testPath: "internal/parser/client_test.go",
+      }
+    ],
+    verificationGaps: [
+      {
+        symbolId: "internal/parser/header.go::ParseHeader",
+        name: "ParseHeader",
+        kind: "function",
+        path: "internal/parser/header.go",
+        line: 48,
+        gapReason: "No structural Go test in *_test.go invokes or references ParseHeader directly.",
+        suggestedAction: "Author a unit test TestParseHeader in internal/parser/header_test.go establishing a direct CALLS edge."
+      }
+    ],
+    completenessStatus: "COMPLETE",
+    diagnostics: [],
+    disclaimer: "STRUCTURAL CHECKS SATISFIED explicitly does NOT denote runtime coverage, runtime safety, or semantic correctness. It confirms only that within the static call graph, structural test relationships and passing command execution were reconciled."
+  },
+  direct_evidence_passed: {
+    id: "audit-scenario-a",
+    scenarioKey: "direct_evidence_passed",
+    scenarioTitle: "Scenario A: Direct Go Structural Test Evidence",
+    scenarioDescription: "A modified Go function CalculateTotal in order.go is directly called by TestCalculateTotal in order_test.go. Explicit test execution passes.",
+    baseRef: "origin/main",
+    headRef: "HEAD",
+    testCommand: "go test ./order",
+    testExitCode: 0,
+    testExecutionTimeMs: 820,
+    verdict: "STRUCTURAL CHECKS SATISFIED",
+    verdictReason: "All 2 entities in the Audited Structural Surface possess structural Go test evidence, graph analysis is complete with zero diagnostics, and explicit test command succeeded.",
+    zeroEvidenceGreenDetected: false,
+    auditedSurface: [
+      {
+        symbolId: "order/order.go::CalculateTotal",
+        name: "CalculateTotal",
+        kind: "function",
+        path: "order/order.go",
+        line: 64,
+        relationshipToDiff: "DIRECT_MODIFICATION",
+        hasStructuralTestEvidence: true,
+        testSymbolId: "order/order_test.go::TestCalculateTotal",
+        testSymbolName: "TestCalculateTotal",
+        testPath: "order/order_test.go"
+      },
+      {
+        symbolId: "order/order.go::OrderSummary",
+        name: "OrderSummary",
+        kind: "struct",
+        path: "order/order.go",
+        line: 18,
+        relationshipToDiff: "TYPE_CONSUMER",
+        hasStructuralTestEvidence: true,
+        testSymbolId: "order/order_test.go::TestCalculateTotal",
+        testSymbolName: "TestCalculateTotal",
+        testPath: "order/order_test.go"
+      }
+    ],
+    verificationGaps: [],
+    completenessStatus: "COMPLETE",
+    diagnostics: [],
+    disclaimer: "STRUCTURAL CHECKS SATISFIED explicitly does NOT denote runtime coverage, runtime safety, or semantic correctness. It confirms only that within the static call graph, structural test relationships and passing command execution were reconciled."
+  },
+  no_test_command: {
+    id: "audit-scenario-c",
+    scenarioKey: "no_test_command",
+    scenarioTitle: "Scenario C: No Explicit Test Command",
+    scenarioDescription: "Go changes have structural test linkages in *_test.go, but no explicit test command was supplied via --test.",
+    baseRef: "origin/main",
+    headRef: "HEAD",
+    testCommand: undefined,
+    testExitCode: undefined,
+    testExecutionTimeMs: undefined,
+    verdict: "REVIEW REQUIRED",
+    verdictReason: "Execution evidence required: No test command was supplied (--test \"<cmd>\"). Structural linkages exist, but command execution has not been verified.",
+    zeroEvidenceGreenDetected: false,
+    auditedSurface: [
+      {
+        symbolId: "order/order.go::CalculateTotal",
+        name: "CalculateTotal",
+        kind: "function",
+        path: "order/order.go",
+        line: 64,
+        relationshipToDiff: "DIRECT_MODIFICATION",
+        hasStructuralTestEvidence: true,
+        testSymbolId: "order/order_test.go::TestCalculateTotal",
+        testSymbolName: "TestCalculateTotal",
+        testPath: "order/order_test.go"
+      }
+    ],
+    verificationGaps: [],
+    completenessStatus: "COMPLETE",
+    diagnostics: [],
+    disclaimer: "STRUCTURAL CHECKS SATISFIED explicitly does NOT denote runtime coverage, runtime safety, or semantic correctness. It confirms only that within the static call graph, structural test relationships and passing command execution were reconciled."
+  },
+  test_failed: {
+    id: "audit-scenario-d",
+    scenarioKey: "test_failed",
+    scenarioTitle: "Scenario D: Failing Explicit Test Command",
+    scenarioDescription: "Structural test evidence exists, but the user-supplied test command exited with code 1 (test assertion failure).",
+    baseRef: "origin/main",
+    headRef: "HEAD",
+    testCommand: "go test ./order",
+    testExitCode: 1,
+    testExecutionTimeMs: 910,
+    verdict: "BLOCKED",
+    verdictReason: "Test execution failed: The supplied test command exited with status 1. Structural checks cannot pass while tests are failing.",
+    zeroEvidenceGreenDetected: false,
+    auditedSurface: [
+      {
+        symbolId: "order/order.go::CalculateTotal",
+        name: "CalculateTotal",
+        kind: "function",
+        path: "order/order.go",
+        line: 64,
+        relationshipToDiff: "DIRECT_MODIFICATION",
+        hasStructuralTestEvidence: true,
+        testSymbolId: "order/order_test.go::TestCalculateTotal",
+        testSymbolName: "TestCalculateTotal",
+        testPath: "order/order_test.go"
+      }
+    ],
+    verificationGaps: [],
+    completenessStatus: "COMPLETE",
+    diagnostics: [],
+    disclaimer: "STRUCTURAL CHECKS SATISFIED explicitly does NOT denote runtime coverage, runtime safety, or semantic correctness. It confirms only that within the static call graph, structural test relationships and passing command execution were reconciled."
+  },
+  degraded_graph: {
+    id: "audit-scenario-e",
+    scenarioKey: "degraded_graph",
+    scenarioTitle: "Scenario E: Degraded Graph / Parser Incompleteness",
+    scenarioDescription: "A target file in the diff produced a Tree-Sitter syntax warning or partial failure during snapshot indexing.",
+    baseRef: "origin/main",
+    headRef: "HEAD",
+    testCommand: "go test ./...",
+    testExitCode: 0,
+    testExecutionTimeMs: 1200,
+    verdict: "REVIEW REQUIRED",
+    verdictReason: "Graph analysis incomplete: Diagnostic warning W_SYNTAX_ERROR detected in internal/sem/parser.go. Evidence is degraded.",
+    zeroEvidenceGreenDetected: false,
+    auditedSurface: [
+      {
+        symbolId: "internal/sem/parser.go::ParseToken",
+        name: "ParseToken",
+        kind: "function",
+        path: "internal/sem/parser.go",
+        line: 12,
+        relationshipToDiff: "DIRECT_MODIFICATION",
+        hasStructuralTestEvidence: false
+      }
+    ],
+    verificationGaps: [
+      {
+        symbolId: "internal/sem/parser.go::ParseToken",
+        name: "ParseToken",
+        kind: "function",
+        path: "internal/sem/parser.go",
+        line: 12,
+        gapReason: "AST parsing encountered syntax error; cannot reliably extract outgoing or incoming structural edges.",
+        suggestedAction: "Resolve syntax errors in internal/sem/parser.go before auditing."
+      }
+    ],
+    completenessStatus: "DEGRADED",
+    diagnostics: [
+      "W_SYNTAX_ERROR: internal/sem/parser.go:12: unrecovered syntax token at line 14",
+      "Partial failure: 1 of 8 symbols in scope unindexed"
+    ],
+    disclaimer: "STRUCTURAL CHECKS SATISFIED explicitly does NOT denote runtime coverage, runtime safety, or semantic correctness. It confirms only that within the static call graph, structural test relationships and passing command execution were reconciled."
+  },
+  non_go_changes: {
+    id: "audit-scenario-g",
+    scenarioKey: "non_go_changes",
+    scenarioTitle: "Scenario G: Non-Go Unsupported Evidence",
+    scenarioDescription: "The diff touches TypeScript or Python files outside V1 Go structural test detection.",
+    baseRef: "origin/main",
+    headRef: "HEAD",
+    testCommand: "npm test",
+    testExitCode: 0,
+    testExecutionTimeMs: 2300,
+    verdict: "REVIEW REQUIRED",
+    verdictReason: "Unsupported language scope: V1 structural test detection is constrained strictly to Go (*_test.go). Changes to app/api/search/route.ts require human review.",
+    zeroEvidenceGreenDetected: false,
+    auditedSurface: [
+      {
+        symbolId: "app/api/search/route.ts::GET",
+        name: "GET",
+        kind: "function",
+        path: "app/api/search/route.ts",
+        line: 6,
+        relationshipToDiff: "DIRECT_MODIFICATION",
+        hasStructuralTestEvidence: false
+      }
+    ],
+    verificationGaps: [
+      {
+        symbolId: "app/api/search/route.ts::GET",
+        name: "GET",
+        kind: "function",
+        path: "app/api/search/route.ts",
+        line: 6,
+        gapReason: "Non-Go file; V1 cannot map structural relationships to test callers.",
+        suggestedAction: "Manual peer review required for non-Go language boundaries."
+      }
+    ],
+    completenessStatus: "COMPLETE",
+    diagnostics: [
+      "NOTICE: Structural test evidence is only evaluated for Go (*_test.go) in V1."
+    ],
+    disclaimer: "STRUCTURAL CHECKS SATISFIED explicitly does NOT denote runtime coverage, runtime safety, or semantic correctness. It confirms only that within the static call graph, structural test relationships and passing command execution were reconciled."
+  }
+};
