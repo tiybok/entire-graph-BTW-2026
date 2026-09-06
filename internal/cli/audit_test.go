@@ -43,6 +43,9 @@ func TestAuditSatisfiedNeedsDirectStructuralEvidenceAndPassingExecution(t *testi
 	if len(report.AuditedSurface) != 1 || !report.AuditedSurface[0].HasTestEvidence {
 		t.Fatalf("direct structural test evidence was not retained: %+v", report.AuditedSurface)
 	}
+	if len(report.Recommendations) != 1 || report.Recommendations[0].Kind != "PRESERVE_EVIDENCE_BOUNDARY" {
+		t.Fatalf("satisfied audit did not retain its evidence boundary: %+v", report.Recommendations)
+	}
 }
 
 func TestAuditGreenExecutionDoesNotEraseStructuralGap(t *testing.T) {
@@ -60,6 +63,12 @@ func TestAuditGreenExecutionDoesNotEraseStructuralGap(t *testing.T) {
 	}
 	if len(report.VerificationGaps) != 1 || report.VerificationGaps[0].EvidenceState != EvidenceStateRequiresVerification {
 		t.Fatalf("unexpected verification gaps: %+v", report.VerificationGaps)
+	}
+	if len(report.Recommendations) != 1 || report.Recommendations[0].Kind != "ESTABLISH_STRUCTURAL_TEST_EVIDENCE" {
+		t.Fatalf("unexpected recommendations: %+v", report.Recommendations)
+	}
+	if strings.Contains(report.Recommendations[0].Message, "go test") {
+		t.Fatalf("recommendation invented a test command: %+v", report.Recommendations[0])
 	}
 }
 
@@ -90,6 +99,9 @@ func TestAuditFailureBlocksWithoutAttributingTheFailure(t *testing.T) {
 	if strings.Contains(strings.ToLower(report.VerdictReason), "caused") {
 		t.Fatalf("audit over-attributed execution failure: %q", report.VerdictReason)
 	}
+	if len(report.Recommendations) != 1 || report.Recommendations[0].Kind != "INSPECT_TEST_EXECUTION" {
+		t.Fatalf("failed execution did not provide the right next step: %+v", report.Recommendations)
+	}
 }
 
 func TestRunAuditTestCapturesPassAndFailure(t *testing.T) {
@@ -113,6 +125,12 @@ func TestAuditRequiresExplicitExecutionEvidence(t *testing.T) {
 	if report.Execution.Status != "NOT_RUN" {
 		t.Fatalf("execution status = %q, want NOT_RUN", report.Execution.Status)
 	}
+	if len(report.Recommendations) != 1 || report.Recommendations[0].Kind != "RUN_EXPLICIT_TEST_COMMAND" {
+		t.Fatalf("unexpected recommendations: %+v", report.Recommendations)
+	}
+	if !strings.Contains(report.Recommendations[0].Message, "does not infer") {
+		t.Fatalf("recommendation did not explain the command boundary: %+v", report.Recommendations[0])
+	}
 }
 
 func TestAuditRelevantDiagnosticsPreventSatisfiedVerdict(t *testing.T) {
@@ -131,6 +149,9 @@ func TestAuditRelevantDiagnosticsPreventSatisfiedVerdict(t *testing.T) {
 	}
 	if len(report.Diagnostics) != 1 || !strings.Contains(report.Diagnostics[0], "W_PARSE") {
 		t.Fatalf("relevant diagnostic was not retained: %+v", report.Diagnostics)
+	}
+	if len(report.Recommendations) != 1 || report.Recommendations[0].Kind != "VERIFY_INCOMPLETE_EVIDENCE" {
+		t.Fatalf("unexpected recommendations: %+v", report.Recommendations)
 	}
 }
 
@@ -171,11 +192,12 @@ func TestAuditJSONContractIsStructuredAndDeterministic(t *testing.T) {
 		Gaps          []struct {
 			EvidenceState string `json:"evidence_state"`
 		} `json:"verification_gaps"`
+		Recommendations []AuditRecommendation `json:"recommendations"`
 	}
 	if err := json.Unmarshal(encoded, &decoded); err != nil {
 		t.Fatalf("unmarshal report: %v", err)
 	}
-	if decoded.SchemaVersion != auditSchemaVersion || decoded.Result != "REVIEW_REQUIRED" || decoded.Summary.VerificationGaps != 1 || len(decoded.Gaps) != 1 {
+	if decoded.SchemaVersion != auditSchemaVersion || decoded.Result != "REVIEW_REQUIRED" || decoded.Summary.VerificationGaps != 1 || len(decoded.Gaps) != 1 || len(decoded.Recommendations) != 1 || decoded.Recommendations[0].Kind != "ESTABLISH_STRUCTURAL_TEST_EVIDENCE" {
 		t.Fatalf("unexpected audit JSON: %s", encoded)
 	}
 }
@@ -192,6 +214,9 @@ func TestAuditTextUsesBoundedClaims(t *testing.T) {
 	}
 	if strings.Contains(text, "No test exists") {
 		t.Fatalf("text made an absence claim: %s", text)
+	}
+	if !strings.Contains(text, "Recommended next steps") || !strings.Contains(text, "locate or add direct Go structural test evidence") {
+		t.Fatalf("text did not render the actionable recommendation: %s", text)
 	}
 }
 

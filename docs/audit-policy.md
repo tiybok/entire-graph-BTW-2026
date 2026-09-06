@@ -10,6 +10,16 @@ GraphAudit compares `<ref>` with the currently checked-out committed `HEAD`.
 It does not claim to audit uncommitted changes. The core never infers a test
 command: pass one explicitly when execution evidence is required.
 
+## Recommended next steps
+
+Each completed audit includes ordered `recommendations` in JSON and a
+**Recommended next steps** section in terminal output. They are derived only
+from the observed execution status and verification gaps. For example,
+GraphAudit asks for an explicit test command when none was supplied, points to
+the affected source when structural evidence is absent, and asks for source or
+behavior-level verification when diagnostics make evidence incomplete. It never
+guesses a test command, test name, or coverage result.
+
 ## Verdict policy
 
 | Verdict | Deterministic condition |
@@ -53,7 +63,10 @@ from the process status.
     "verification_gaps": 2
   },
   "execution": {"status": "PASS"},
-  "verification_gaps": []
+  "verification_gaps": [],
+  "recommendations": [
+    {"kind": "PRESERVE_EVIDENCE_BOUNDARY", "message": "..."}
+  ]
 }
 ```
 

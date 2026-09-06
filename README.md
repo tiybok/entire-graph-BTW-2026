@@ -276,6 +276,10 @@ available when every audited entity has confirmed direct Go structural test
 evidence and the explicit command passes. `STRUCTURAL CHECKS SATISFIED` does
 not establish runtime coverage, program correctness, or safety.
 
+Every completed audit also provides ordered recommended next steps in the
+terminal view and in JSON. They point to missing or incomplete evidence without
+guessing a test command, test name, or coverage result.
+
 See the [evidence model](docs/evidence-model.md), [audit policy](docs/audit-policy.md),
 [examples](docs/examples.md), and [limitations](docs/limitations.md) for the
 current V1 contract.

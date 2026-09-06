@@ -75,6 +75,7 @@ current change caused the failure.
 entire graph audit --base HEAD~1 --test "go test ./..." --json
 ```
 
-Use `result`, `summary`, `execution`, `audited_surface`, and
-`verification_gaps` to build CI or agent integrations. Do not parse the human
-output.
+Use `result`, `summary`, `execution`, `audited_surface`, `verification_gaps`,
+and ordered `recommendations` to build CI or agent integrations. The
+recommendations provide safe next actions derived from observed evidence; do not
+parse the human output.

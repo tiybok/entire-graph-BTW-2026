@@ -106,6 +106,17 @@ type AuditSummary struct {
 	VerificationGaps     int `json:"verification_gaps"`
 }
 
+// AuditRecommendation is an actionable follow-up derived from the evidence
+// actually collected by the audit. It deliberately does not invent a test
+// command, test name, or coverage claim.
+type AuditRecommendation struct {
+	Kind     string `json:"kind"`
+	Message  string `json:"message"`
+	SymbolID string `json:"symbol_id,omitempty"`
+	Path     string `json:"path,omitempty"`
+	Line     int    `json:"line,omitempty"`
+}
+
 // AuditReportPayload is the stable machine-readable result for the V1 audit.
 // Verdict remains for compatibility with the existing command; Result is the
 // automation-oriented spelling introduced with schema version 1.
@@ -124,6 +135,7 @@ type AuditReportPayload struct {
 	TestExitCode          *int                    `json:"test_exit_code,omitempty"`
 	AuditedSurface        []AuditEntityRecord     `json:"audited_surface"`
 	VerificationGaps      []VerificationGapRecord `json:"verification_gaps"`
+	Recommendations       []AuditRecommendation   `json:"recommendations"`
 	CompletenessStatus    string                  `json:"completeness_status"`
 	Diagnostics           []string                `json:"diagnostics"`
 	Limitations           []string                `json:"limitations"`
@@ -229,6 +241,7 @@ func buildAuditReport(flags auditFlags, diff sem.Result, snapshot sem.ProviderSn
 		Execution:        AuditExecutionEvidence{Command: flags.Test, Status: "NOT_RUN"},
 		AuditedSurface:   []AuditEntityRecord{},
 		VerificationGaps: []VerificationGapRecord{},
+		Recommendations:  []AuditRecommendation{},
 		Diagnostics:      []string{},
 		Limitations: []string{
 			"GraphAudit V1 audits the checked-out HEAD against --base; it does not include uncommitted working-tree changes.",
@@ -588,6 +601,55 @@ func adjudicateAudit(report *AuditReportPayload) {
 		report.VerdictReason = "All audited entities have confirmed direct Go structural test evidence and the supplied test command passed."
 	}
 	report.Result = strings.ReplaceAll(report.Verdict, " ", "_")
+	report.Recommendations = buildAuditRecommendations(report)
+}
+
+func buildAuditRecommendations(report *AuditReportPayload) []AuditRecommendation {
+	recommendations := make([]AuditRecommendation, 0, len(report.VerificationGaps)+2)
+	switch report.Execution.Status {
+	case "NOT_RUN":
+		recommendations = append(recommendations, AuditRecommendation{
+			Kind:    "RUN_EXPLICIT_TEST_COMMAND",
+			Message: "Rerun the audit with --test \"<your project's test command>\" to add execution evidence. GraphAudit does not infer a command.",
+		})
+	case "FAIL", "LAUNCH_ERROR":
+		recommendations = append(recommendations, AuditRecommendation{
+			Kind:    "INSPECT_TEST_EXECUTION",
+			Message: "Inspect the supplied test command's bounded output and failure context before deciding whether it relates to this change.",
+		})
+	}
+	if report.Summary.AuditedEntities == 0 {
+		recommendations = append(recommendations, AuditRecommendation{
+			Kind:    "INSPECT_SEMANTIC_RANGE",
+			Message: "Inspect the semantic range and changed source directly because no audited structural entities were established.",
+		})
+	}
+	for _, gap := range report.VerificationGaps {
+		kind := "ESTABLISH_STRUCTURAL_TEST_EVIDENCE"
+		message := "Inspect the reported source and locate or add direct Go structural test evidence as appropriate; no such evidence was established by this audit."
+		switch {
+		case gap.SymbolID == "":
+			kind = "MAP_SEMANTIC_CHANGE"
+			message = "Inspect the reported source because this semantic change could not be mapped to a current-HEAD graph symbol."
+		case gap.EvidenceState == EvidenceStateHeuristicOrIncomplete:
+			kind = "VERIFY_INCOMPLETE_EVIDENCE"
+			message = "Inspect the reported source and relevant diagnostics, then use source-level or behavior-level verification because structural evidence is incomplete."
+		}
+		recommendations = append(recommendations, AuditRecommendation{
+			Kind:     kind,
+			Message:  message,
+			SymbolID: gap.SymbolID,
+			Path:     gap.Path,
+			Line:     gap.Line,
+		})
+	}
+	if report.Verdict == AuditVerdictStructuralSatisfied {
+		recommendations = append(recommendations, AuditRecommendation{
+			Kind:    "PRESERVE_EVIDENCE_BOUNDARY",
+			Message: "Use this result only for the structural and execution evidence reported here; it does not establish runtime coverage, program correctness, or safety.",
+		})
+	}
+	return recommendations
 }
 
 func renderAuditText(report *AuditReportPayload) string {
@@ -620,6 +682,16 @@ func renderAuditText(report *AuditReportPayload) string {
 		fmt.Fprintf(&output, "\n%d. %s\n   %s:%d\n   relationship: %s\n   evidence: %s\n   reason: %s\n   next: %s\n",
 			index+1, termsafe.Line(gap.Name), termsafe.Line(gap.Path), gap.Line,
 			gap.Relationship, gap.EvidenceState, termsafe.Line(gap.Reason), termsafe.Line(gap.SuggestedAction))
+	}
+	if len(report.Recommendations) > 0 {
+		fmt.Fprintln(&output, "\nRecommended next steps")
+		for index, recommendation := range report.Recommendations {
+			location := ""
+			if recommendation.Path != "" {
+				location = fmt.Sprintf(" (%s:%d)", termsafe.Line(recommendation.Path), recommendation.Line)
+			}
+			fmt.Fprintf(&output, "%d. %s%s\n", index+1, termsafe.Line(recommendation.Message), location)
+		}
 	}
 	fmt.Fprintf(&output, "\nResult\n%s\n%s\n", report.Verdict, termsafe.Line(report.VerdictReason))
 	if report.ZeroEvidenceGreen {
