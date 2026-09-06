@@ -48,6 +48,7 @@ other query commands use; details are in the
 | `commit <ref>` | Entity-level change list for a commit vs its first parent, with heuristic dependent counts. |
 | `diff --base A --head B` | The same between two refs. `analyze` is an alias of `diff`. |
 | `checkpoint <id>` | Analyzes the commit behind an Entire-Checkpoint trailer. |
+| `audit --base <ref>` | Audits committed `HEAD` against a base ref using semantic changes, a full graph snapshot, and conservative Go structural test evidence. `--test` adds explicit execution evidence; `--json` emits schema-versioned results. See [audit policy](audit-policy.md). |
 | `verify` | Runs a caller-provided test command and returns an adjudicated verdict. This executes the command you pass it; see [trust and security](trust-and-security.md). |
 
 ## Export

@@ -1,7 +1,13 @@
 # GraphAudit — Pre-Curveball Design Snapshot
 
 **Track**: Track 2 — Build with Graph Intelligence  
-**Status**: Pre-Implementation Design Specification (Pre-Curveball)
+**Status**: Historical pre-implementation design snapshot (not normative)
+
+> The implementation now lives in `internal/cli/audit.go`. For the current
+> product contract, use the [evidence model](evidence-model.md),
+> [audit policy](audit-policy.md), and [limitations](limitations.md). This
+> snapshot predates implementation and may describe planned behavior that V1
+> deliberately does not provide.
 
 ---
 

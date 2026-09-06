@@ -1,5 +1,9 @@
 # GraphAudit: Known Limitations & Technical Boundaries
 
+> Historical note: this early note is retained for context. The current V1
+> contract is [limitations](limitations.md), together with the
+> [evidence model](evidence-model.md) and [audit policy](audit-policy.md).
+
 GraphAudit intentionally operates within strict boundaries to ensure claims remain defensible.
 
 ---
@@ -8,7 +12,7 @@ GraphAudit intentionally operates within strict boundaries to ensure claims rema
 
 - **No Execution Tracing**: GraphAudit evaluates static call graph edges extracted from AST structures via Tree-Sitter. It has zero knowledge of runtime branch conditions, loop counts, or code paths.
 - **Not Runtime Coverage**: A test calling a function does not guarantee that the specific modified lines, edge cases, or exception blocks within that function were executed at runtime.
-- **No Correctness or Safety Proof**: A result of `STRUCTURAL CHECKS SATISFIED` proves only that structural relationships between test symbols and changed production symbols exist and that the test command exited cleanly. It must never be construed as a proof of program correctness or absence of bugs.
+- **No Correctness or Safety Conclusion**: `STRUCTURAL CHECKS SATISFIED` reports only the structural relationships and explicit command execution that GraphAudit evaluated. It must not be read as a conclusion about program correctness or absence of bugs.
 
 ---
 

@@ -257,6 +257,29 @@ server. The full data-flow and write-surface description, including what runs
 caller-provided commands, is in
 the [trust and security](docs/trust-and-security.md) documentation.
 
+## GraphAudit
+
+GraphAudit is a local Structural Verification Audit for changes made to a Git
+repository. Green tests alone do not establish what code they structurally
+exercise. `entire graph audit` compares a base ref to committed `HEAD`, builds a
+conservative affected surface, associates direct Go test relationships where
+they exist, and keeps structural and execution evidence separate.
+
+```sh
+entire graph audit --base origin/main --test "go test ./..."
+entire graph audit --base origin/main --test "go test ./..." --json
+```
+
+A passing test command with unresolved structural gaps produces `REVIEW
+REQUIRED`; a failed command produces `BLOCKED`; the strongest result is only
+available when every audited entity has confirmed direct Go structural test
+evidence and the explicit command passes. `STRUCTURAL CHECKS SATISFIED` does
+not establish runtime coverage, program correctness, or safety.
+
+See the [evidence model](docs/evidence-model.md), [audit policy](docs/audit-policy.md),
+[examples](docs/examples.md), and [limitations](docs/limitations.md) for the
+current V1 contract.
+
 ## Documentation
 
 - [All Documentation](docs/README.md)

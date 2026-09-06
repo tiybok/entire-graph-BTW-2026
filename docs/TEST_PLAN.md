@@ -1,7 +1,10 @@
 # GraphAudit Test Strategy & Planned Test Cases
 
-**Document Status**: Pre-Implementation Test Specification.  
-*Note: These test scenarios define the acceptance criteria for GraphAudit; test implementation has not yet begun.*
+**Document Status**: Historical pre-implementation acceptance plan.
+
+> Current V1 tests are in `internal/cli/audit_test.go`; they cover the
+> implemented evidence and policy boundaries. This document remains as design
+> history and includes scenarios that V1 intentionally defers.
 
 ---
 

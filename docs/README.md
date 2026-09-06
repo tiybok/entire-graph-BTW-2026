@@ -11,6 +11,7 @@ authoritative in `entire graph capabilities --json`.
 | Document | Purpose |
 | --- | --- |
 | [Root README](../README.md) | What Entire Graph is, installation, activation, and the first agent task |
+| [End-user guide](end-user-guide.md) | A task-oriented setup and daily-use guide for people working with coding agents |
 | [Agent activation](agents.md) | `init-agents` file effects, rerun and marker behavior, client notes, verification, and recovery |
 | [Command reference](commands.md) | Task-grouped manual and automation surface, with the defaults that matter |
 | [Search results and ranking](search.md) | What `search` returns and how to read it |
@@ -24,6 +25,7 @@ authoritative in `entire graph capabilities --json`.
 | Document | Purpose |
 | --- | --- |
 | [Semantic provider requirements](semantic-provider-requirements.md) | Provider responsibilities, ownership boundary with Entire Brain, profiles, relations, warnings, and limits |
+| [Technical architecture](ARCHITECTURE.md) | Runtime components, streaming provider pipeline, cache boundaries, and extension guidance |
 | [Snapshot format](snapshot-format.md) | Streaming NDJSON contract, compact artifact, and schema compatibility rules |
 | [Entire Brain and Entire Graph boundaries](brain-and-graph-boundaries.md) | Ownership decisions and explicit non-goals |
 | [Benchmarks](benchmarks.md) | Quantitative methodology, results, corrections, and caveats; `bench/README.md` documents the harness layout and flags |
@@ -31,6 +33,17 @@ authoritative in `entire graph capabilities --json`.
 | [ADR 0002](adr/0002-committed-tree-cache-key.md) | Accepted committed-tree cache-key decision; authoritative for committed-tree cache identity |
 | [ADR 0003](adr/0003-working-tree-search-snapshot-cache.md) | Superseded clean-tree search-snapshot reuse decision |
 | [ADR 0004](adr/0004-working-tree-cache-security-boundary.md) | Accepted working-tree cache bypass security decision; authoritative for working-tree eligibility |
+
+## GraphAudit
+
+| Document | Purpose |
+| --- | --- |
+| [Technical architecture](ARCHITECTURE.md) | Shared runtime architecture and GraphAudit’s place in the command layer |
+| [Evidence model](evidence-model.md) | Audited Structural Surface, structural test evidence, and evidence states |
+| [Audit policy](audit-policy.md) | Verdict, JSON, and process-exit semantics |
+| [Examples](examples.md) | Satisfied, green-but-gap, incomplete-evidence, blocked, and JSON scenarios |
+| [Limitations](limitations.md) | V1 scope and interpretation boundaries |
+| [Development](development.md) | Existing primitives, extension rules, and verification |
 
 Completed plans, superseded references, branch diaries, and point-in-time proof
 logs are listed in the [archive](archive/README.md). Archived documents are kept

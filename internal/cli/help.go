@@ -382,8 +382,8 @@ var commandDocs = []commandDoc{
 		group:   groupAnalyze,
 		summary: "Structural verification audit & Zero-Evidence Green Test Detector",
 		usage:   []string{`entire graph audit [--base <ref>] [--test "<cmd>"] [--repo .] [--json]`},
-		long: "audit reconciles AST modifications against structural test evidence (*_test.go) and test execution results. It identifies whether tests that pass actually call the modified functions or methods.\n\n" +
-			"When a test command passes with exit code 0 but modified entities in the Audited Structural Surface have no structural Go test callers, audit triggers the ZERO-EVIDENCE GREEN TEST DETECTOR and marks REVIEW REQUIRED. A failing test command yields BLOCKED. Only when all affected entities possess structural test evidence and tests pass does it report STRUCTURAL CHECKS SATISFIED.",
+		long: "audit compares --base with the currently checked-out HEAD, builds one full committed-tree graph snapshot, and derives a conservative Audited Structural Surface from changed symbols plus direct resolved CALLS/CONSTRUCTS relationships. V1 accepts structural test evidence only from direct resolved CALLS/CONSTRUCTS edges from Go *_test.go symbols. A missing edge means no structural test evidence was established; it does not prove no test exists.\n\n" +
+			"A passing --test command is execution evidence, not automatic structural verification. If a test command passes while verification gaps remain, audit returns REVIEW REQUIRED and marks the Zero-Evidence Green Test Detector. A non-zero command exit returns BLOCKED without attributing the failure to the change. STRUCTURAL CHECKS SATISFIED describes only the evaluated structural and execution evidence; it does not establish runtime coverage, program correctness, or safety. Audit verdicts are reported in output; normal evaluated verdicts retain the CLI's zero process exit status, while command errors use the existing non-zero error path.",
 		flags: []flagDoc{
 			{name: "--base", arg: "ref", def: "HEAD~1", desc: "Base Git ref to compare against"},
 			{name: "--test", arg: "cmd", desc: "Test command to execute and adjudicate (e.g. \"go test ./...\")"},

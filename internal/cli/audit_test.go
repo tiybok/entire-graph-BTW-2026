@@ -2,8 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/entireio/entire-graph/internal/sem"
 )
 
 func TestAuditFlagParsing(t *testing.T) {
@@ -14,178 +17,204 @@ func TestAuditFlagParsing(t *testing.T) {
 		"--max-bytes", "2048",
 	})
 	if err != nil {
-		t.Fatalf("unexpected error parsing audit flags: %v", err)
+		t.Fatalf("parseAuditFlags: %v", err)
 	}
-
-	if flags.Base != "origin/main" {
-		t.Errorf("expected base origin/main, got %s", flags.Base)
+	if flags.Base != "origin/main" || flags.Test != "go test ./..." || !flags.JSON || flags.MaxBytes != 2048 {
+		t.Fatalf("unexpected flags: %+v", flags)
 	}
-	if flags.Test != "go test ./..." {
-		t.Errorf("expected test 'go test ./...', got %s", flags.Test)
-	}
-	if !flags.JSON {
-		t.Errorf("expected JSON true, got false")
-	}
-	if flags.MaxBytes != 2048 {
-		t.Errorf("expected max bytes 2048, got %d", flags.MaxBytes)
+	if _, err := parseAuditFlags([]string{"--max-bytes", "0"}); err == nil {
+		t.Fatal("accepted a non-positive output limit")
 	}
 }
 
-func TestAuditScenarioDecisionAdjudication(t *testing.T) {
-	// Scenario D: Failing explicit test command -> BLOCKED
-	exitCodeFail := 1
-	blockedReport := &AuditReportPayload{
-		VerdictReason: "Test execution failed",
-		TestExitCode:  &exitCodeFail,
-	}
-	if *blockedReport.TestExitCode != 0 {
-		blockedReport.Verdict = AuditVerdictBlocked
-	}
-	if blockedReport.Verdict != AuditVerdictBlocked {
-		t.Fatalf("expected BLOCKED verdict on non-zero exit, got %s", blockedReport.Verdict)
-	}
+func TestAuditSatisfiedNeedsDirectStructuralEvidenceAndPassingExecution(t *testing.T) {
+	diff, snapshot := auditFixture(true)
+	report := buildAuditReport(auditFlags{Base: "main", Test: "go test ./..."}, diff, snapshot)
+	passed := 0
+	report.Execution = AuditExecutionEvidence{Command: "go test ./...", Status: "PASS", ExitCode: &passed}
+	adjudicateAudit(report)
 
-	// Scenario B: Zero-Evidence Green Test Detector -> REVIEW REQUIRED
-	exitCodeZero := 0
-	zeroEvidenceReport := &AuditReportPayload{
-		TestExitCode: &exitCodeZero,
-		VerificationGaps: []VerificationGapRecord{
-			{
-				SymbolID: "pkg::ParseHeader",
-				Name:     "ParseHeader",
-				Reason:   "No structural test callers",
-			},
-		},
+	if report.Verdict != AuditVerdictStructuralSatisfied {
+		t.Fatalf("verdict = %q, want %q: %+v", report.Verdict, AuditVerdictStructuralSatisfied, report)
 	}
-	if *zeroEvidenceReport.TestExitCode == 0 && len(zeroEvidenceReport.VerificationGaps) > 0 {
-		zeroEvidenceReport.Verdict = AuditVerdictReviewRequired
-		zeroEvidenceReport.ZeroEvidenceGreen = true
+	if got := report.Summary.VerificationGaps; got != 0 {
+		t.Fatalf("verification gaps = %d, want 0", got)
 	}
-	if zeroEvidenceReport.Verdict != AuditVerdictReviewRequired {
-		t.Fatalf("expected REVIEW REQUIRED for zero-evidence green test, got %s", zeroEvidenceReport.Verdict)
-	}
-	if !zeroEvidenceReport.ZeroEvidenceGreen {
-		t.Fatalf("expected ZeroEvidenceGreen to be true")
-	}
-
-	// Scenario A: Direct confirmed evidence + passing test -> STRUCTURAL CHECKS SATISFIED
-	satisfiedReport := &AuditReportPayload{
-		TestExitCode:       &exitCodeZero,
-		CompletenessStatus: "COMPLETE",
-		VerificationGaps:   []VerificationGapRecord{},
-		AuditedSurface: []AuditEntityRecord{
-			{
-				Name:            "CalculateTotal",
-				EvidenceState:   EvidenceStateConfirmed,
-				HasTestEvidence: true,
-			},
-		},
-	}
-	if *satisfiedReport.TestExitCode == 0 && len(satisfiedReport.VerificationGaps) == 0 && !satisfiedReport.HasIncompleteEvidence {
-		satisfiedReport.Verdict = AuditVerdictStructuralSatisfied
-	}
-	if satisfiedReport.Verdict != AuditVerdictStructuralSatisfied {
-		t.Fatalf("expected STRUCTURAL CHECKS SATISFIED, got %s", satisfiedReport.Verdict)
-	}
-
-	// Scenario E: Incomplete / Heuristic Graph Evidence -> MUST prevent STRUCTURAL CHECKS SATISFIED (Curveball requirement)
-	heuristicReport := &AuditReportPayload{
-		TestExitCode:          &exitCodeZero,
-		HasIncompleteEvidence: true,
-		CompletenessStatus:    "HEURISTIC",
-		VerificationGaps:      []VerificationGapRecord{},
-		AuditedSurface: []AuditEntityRecord{
-			{
-				Name:            "ProcessPayment",
-				EvidenceState:   EvidenceStateHeuristicOrIncomplete,
-				HasTestEvidence: true,
-			},
-		},
-	}
-	if heuristicReport.HasIncompleteEvidence || heuristicReport.CompletenessStatus == "HEURISTIC" {
-		heuristicReport.Verdict = AuditVerdictReviewRequired
-		heuristicReport.VerdictReason = "Relevant Graph evidence is incomplete or heuristic."
-	}
-	if heuristicReport.Verdict != AuditVerdictReviewRequired {
-		t.Fatalf("expected REVIEW REQUIRED when graph evidence is incomplete/heuristic, got %s", heuristicReport.Verdict)
-	}
-	if heuristicReport.Verdict == AuditVerdictStructuralSatisfied {
-		t.Fatalf("incomplete graph evidence MUST NEVER yield STRUCTURAL CHECKS SATISFIED")
-	}
-
-	// Scenario C: No test command provided -> REVIEW REQUIRED
-	noTestReport := &AuditReportPayload{
-		TestExitCode: nil,
-	}
-	if noTestReport.TestExitCode == nil {
-		noTestReport.Verdict = AuditVerdictReviewRequired
-	}
-	if noTestReport.Verdict != AuditVerdictReviewRequired {
-		t.Fatalf("expected REVIEW REQUIRED when no test command provided, got %s", noTestReport.Verdict)
+	if len(report.AuditedSurface) != 1 || !report.AuditedSurface[0].HasTestEvidence {
+		t.Fatalf("direct structural test evidence was not retained: %+v", report.AuditedSurface)
 	}
 }
 
-func TestExecuteAuditIntegration(t *testing.T) {
-	ctx := context.Background()
-	// Test passing test command with satisfied checks
-	flagsSatisfied := auditFlags{
-		Base: "HEAD",
-		Test: "true",
-	}
-	rep, err := executeAudit(ctx, ".", flagsSatisfied)
-	if err != nil {
-		t.Fatalf("executeAudit failed: %v", err)
-	}
-	if rep.Verdict != AuditVerdictStructuralSatisfied {
-		t.Errorf("expected STRUCTURAL CHECKS SATISFIED, got %s", rep.Verdict)
-	}
+func TestAuditGreenExecutionDoesNotEraseStructuralGap(t *testing.T) {
+	diff, snapshot := auditFixture(false)
+	report := buildAuditReport(auditFlags{Base: "main", Test: "go test ./..."}, diff, snapshot)
+	passed := 0
+	report.Execution = AuditExecutionEvidence{Command: "go test ./...", Status: "PASS", ExitCode: &passed}
+	adjudicateAudit(report)
 
-	// Test failing test command -> BLOCKED
-	flagsFailed := auditFlags{
-		Base: "HEAD",
-		Test: "false",
+	if report.Verdict != AuditVerdictReviewRequired {
+		t.Fatalf("verdict = %q, want %q", report.Verdict, AuditVerdictReviewRequired)
 	}
-	repFail, err := executeAudit(ctx, ".", flagsFailed)
-	if err != nil {
-		t.Fatalf("executeAudit failed: %v", err)
+	if !report.ZeroEvidenceGreen {
+		t.Fatal("passing execution with unresolved structural evidence did not trigger zero-evidence detection")
 	}
-	if repFail.Verdict != AuditVerdictBlocked {
-		t.Errorf("expected BLOCKED, got %s", repFail.Verdict)
-	}
-
-	// Test no test command -> REVIEW REQUIRED
-	flagsNoTest := auditFlags{
-		Base: "HEAD",
-	}
-	repNoTest, err := executeAudit(ctx, ".", flagsNoTest)
-	if err != nil {
-		t.Fatalf("executeAudit failed: %v", err)
-	}
-	if repNoTest.Verdict != AuditVerdictReviewRequired {
-		t.Errorf("expected REVIEW REQUIRED, got %s", repNoTest.Verdict)
+	if len(report.VerificationGaps) != 1 || report.VerificationGaps[0].EvidenceState != EvidenceStateRequiresVerification {
+		t.Fatalf("unexpected verification gaps: %+v", report.VerificationGaps)
 	}
 }
 
-func TestAuditTerminologyCompliance(t *testing.T) {
-	// Forbidden terminology audit
-	forbidden := []string{
-		"proof",
-		"formally verified",
-		"correctness guaranteed",
-		"fully covered",
-		"runtime coverage",
-		"mathematical certainty",
-		"bug-free",
-		"flawless",
+func TestAuditRejectsNameOnlyTestRelationship(t *testing.T) {
+	diff, snapshot := auditFixture(false)
+	snapshot.Relations = append(snapshot.Relations, sem.RelationRecord{
+		FromID: "test", ToID: "changed", Type: "CALLS", Confidence: 1, Resolution: "name_only",
+	})
+	report := buildAuditReport(auditFlags{Base: "main"}, diff, snapshot)
+	if report.AuditedSurface[0].HasTestEvidence {
+		t.Fatalf("name-only relation was accepted as structural evidence: %+v", report.AuditedSurface[0])
 	}
+	if report.AuditedSurface[0].EvidenceState != EvidenceStateRequiresVerification {
+		t.Fatalf("evidence state = %q, want %q", report.AuditedSurface[0].EvidenceState, EvidenceStateRequiresVerification)
+	}
+}
 
-	for _, word := range forbidden {
-		if strings.Contains(strings.ToLower(auditMandatoryDisclaimer), word) && !strings.Contains(strings.ToLower(auditMandatoryDisclaimer), "not") {
-			t.Errorf("forbidden marketing claim found in audit disclaimer: %q", word)
+func TestAuditFailureBlocksWithoutAttributingTheFailure(t *testing.T) {
+	diff, snapshot := auditFixture(true)
+	report := buildAuditReport(auditFlags{Base: "main", Test: "go test ./..."}, diff, snapshot)
+	failed := 1
+	report.Execution = AuditExecutionEvidence{Command: "go test ./...", Status: "FAIL", ExitCode: &failed}
+	adjudicateAudit(report)
+
+	if report.Verdict != AuditVerdictBlocked {
+		t.Fatalf("verdict = %q, want %q", report.Verdict, AuditVerdictBlocked)
+	}
+	if strings.Contains(strings.ToLower(report.VerdictReason), "caused") {
+		t.Fatalf("audit over-attributed execution failure: %q", report.VerdictReason)
+	}
+}
+
+func TestRunAuditTestCapturesPassAndFailure(t *testing.T) {
+	passed := runAuditTest(context.Background(), t.TempDir(), "printf pass")
+	if passed.Status != "PASS" || passed.ExitCode == nil || *passed.ExitCode != 0 || passed.Output != "pass" {
+		t.Fatalf("unexpected pass evidence: %+v", passed)
+	}
+	failed := runAuditTest(context.Background(), t.TempDir(), "printf failure; exit 3")
+	if failed.Status != "FAIL" || failed.ExitCode == nil || *failed.ExitCode != 3 || failed.Output != "failure" {
+		t.Fatalf("unexpected failure evidence: %+v", failed)
+	}
+}
+
+func TestAuditRequiresExplicitExecutionEvidence(t *testing.T) {
+	diff, snapshot := auditFixture(true)
+	report := buildAuditReport(auditFlags{Base: "main"}, diff, snapshot)
+	adjudicateAudit(report)
+	if report.Verdict != AuditVerdictReviewRequired {
+		t.Fatalf("verdict = %q, want %q", report.Verdict, AuditVerdictReviewRequired)
+	}
+	if report.Execution.Status != "NOT_RUN" {
+		t.Fatalf("execution status = %q, want NOT_RUN", report.Execution.Status)
+	}
+}
+
+func TestAuditRelevantDiagnosticsPreventSatisfiedVerdict(t *testing.T) {
+	diff, snapshot := auditFixture(true)
+	snapshot.Header.Warnings = []sem.ProviderWarning{{Code: "W_PARSE", FilePath: "service.go"}}
+	report := buildAuditReport(auditFlags{Base: "main", Test: "go test ./..."}, diff, snapshot)
+	passed := 0
+	report.Execution = AuditExecutionEvidence{Command: "go test ./...", Status: "PASS", ExitCode: &passed}
+	adjudicateAudit(report)
+
+	if report.Verdict != AuditVerdictReviewRequired || !report.HasIncompleteEvidence {
+		t.Fatalf("diagnostic did not require review: %+v", report)
+	}
+	if report.AuditedSurface[0].EvidenceState != EvidenceStateHeuristicOrIncomplete {
+		t.Fatalf("evidence state = %q, want incomplete", report.AuditedSurface[0].EvidenceState)
+	}
+	if len(report.Diagnostics) != 1 || !strings.Contains(report.Diagnostics[0], "W_PARSE") {
+		t.Fatalf("relevant diagnostic was not retained: %+v", report.Diagnostics)
+	}
+}
+
+func TestAuditUsesDirectImpactButNotFilenameInference(t *testing.T) {
+	diff, snapshot := auditFixture(false)
+	snapshot.Symbols = append(snapshot.Symbols, sem.SymbolRecord{
+		ID: "caller", Name: "Caller", Kind: "function", FilePath: "caller.go", StartLine: 3, Language: "Go",
+	})
+	snapshot.Relations = append(snapshot.Relations, sem.RelationRecord{
+		FromID: "caller", ToID: "changed", Type: "CALLS", Confidence: 1, Resolution: "exact",
+		Evidence: []sem.Evidence{{FilePath: "caller.go", StartLine: 4}},
+	})
+	report := buildAuditReport(auditFlags{Base: "main"}, diff, snapshot)
+	if len(report.AuditedSurface) != 2 {
+		t.Fatalf("audited surface = %+v, want changed symbol and direct caller", report.AuditedSurface)
+	}
+	for _, entity := range report.AuditedSurface {
+		if entity.HasTestEvidence {
+			t.Fatalf("a *_test.go filename without a relation was treated as evidence: %+v", entity)
 		}
 	}
+}
 
-	if !strings.Contains(auditMandatoryDisclaimer, "explicitly does NOT denote runtime coverage") {
-		t.Errorf("mandatory disclaimer missing runtime coverage disclaimer clause")
+func TestAuditJSONContractIsStructuredAndDeterministic(t *testing.T) {
+	diff, snapshot := auditFixture(false)
+	report := buildAuditReport(auditFlags{Base: "main", Test: "go test ./..."}, diff, snapshot)
+	passed := 0
+	report.Execution = AuditExecutionEvidence{Command: "go test ./...", Status: "PASS", ExitCode: &passed}
+	adjudicateAudit(report)
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
 	}
+	var decoded struct {
+		SchemaVersion int          `json:"schema_version"`
+		Result        string       `json:"result"`
+		Summary       AuditSummary `json:"summary"`
+		Gaps          []struct {
+			EvidenceState string `json:"evidence_state"`
+		} `json:"verification_gaps"`
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal report: %v", err)
+	}
+	if decoded.SchemaVersion != auditSchemaVersion || decoded.Result != "REVIEW_REQUIRED" || decoded.Summary.VerificationGaps != 1 || len(decoded.Gaps) != 1 {
+		t.Fatalf("unexpected audit JSON: %s", encoded)
+	}
+}
+
+func TestAuditTextUsesBoundedClaims(t *testing.T) {
+	diff, snapshot := auditFixture(false)
+	report := buildAuditReport(auditFlags{Base: "main", Test: "go test ./..."}, diff, snapshot)
+	passed := 0
+	report.Execution = AuditExecutionEvidence{Command: "go test ./...", Status: "PASS", ExitCode: &passed}
+	adjudicateAudit(report)
+	text := renderAuditText(report)
+	if !strings.Contains(text, "No structurally related Go test evidence was established") {
+		t.Fatalf("missing evidence-bounded explanation: %s", text)
+	}
+	if strings.Contains(text, "No test exists") {
+		t.Fatalf("text made an absence claim: %s", text)
+	}
+}
+
+func auditFixture(withTestRelation bool) (sem.Result, sem.ProviderSnapshot) {
+	diff := sem.Result{
+		Files: []sem.FileChange{{
+			Path:     "service.go",
+			Language: "Go",
+			Changes:  []sem.EntityChange{{Type: "body_changed", Kind: "function", Name: "Changed", AfterStartLine: 3}},
+		}},
+	}
+	snapshot := sem.ProviderSnapshot{
+		Symbols: []sem.SymbolRecord{
+			{ID: "changed", Name: "Changed", Kind: "function", FilePath: "service.go", StartLine: 3, Language: "Go"},
+			{ID: "test", Name: "TestChanged", Kind: "function", FilePath: "service_test.go", StartLine: 5, Language: "Go"},
+		},
+		Relations: []sem.RelationRecord{},
+	}
+	if withTestRelation {
+		snapshot.Relations = append(snapshot.Relations, sem.RelationRecord{
+			FromID: "test", ToID: "changed", Type: "CALLS", Confidence: 1, Resolution: "exact",
+			Evidence: []sem.Evidence{{Kind: "call", FilePath: "service_test.go", StartLine: 6}},
+		})
+	}
+	return diff, snapshot
 }
